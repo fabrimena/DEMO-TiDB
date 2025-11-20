@@ -13,10 +13,10 @@ logging.getLogger("mysql.connector").setLevel(logging.WARNING)
 POOL_CONFIG = {
     'pool_name': 'tidb_pool',
     'pool_size': 32, 
-    'host': 'tu-HOST',
+    'host': 'gateway01.us-east-1.prod.aws.tidbcloud.com',
     'port': 4000,
-    'user': 'tu-USERNAME',
-    'password': 'tu-PASSWORD',
+    'user': '4SUir1NzoHpaiZR.root',
+    'password': 'drE83TL7cJpCSrRE',
     'database': 'bank'
 }
 
@@ -55,6 +55,22 @@ def single_transfer_with_retries(tx_id=None, max_retries=3):
             conn.close()
             return True, elapsed
             
+        except (TimeoutError, mysql.connector.errors.PoolError):
+            # Errores de pool - reintentar sin espera
+            if cur:
+                try:
+                    cur.close()
+                except Exception:  # pylint: disable=broad-except
+                    pass
+            if conn:
+                try:
+                    conn.close()
+                except Exception:  # pylint: disable=broad-except
+                    pass
+            if attempt < max_retries:
+                continue
+            return False, None
+
         except mysql.connector.Error as e:
             if conn:
                 try:
@@ -78,22 +94,7 @@ def single_transfer_with_retries(tx_id=None, max_retries=3):
             else:
                 # error no esperado o último intento -> fallo
                 return False, time.time() - start if 'start' in locals() else None
-                
-        except (TimeoutError, mysql.connector.errors.PoolError):
-            # Errores de pool - reintentar sin espera
-            if cur:
-                try:
-                    cur.close()
-                except Exception:  # pylint: disable=broad-except
-                    pass
-            if conn:
-                try:
-                    conn.close()
-                except Exception:  # pylint: disable=broad-except
-                    pass
-            if attempt < max_retries:
-                continue
-            return False, None
+
         except Exception:  # pylint: disable=broad-except
             # Capturar cualquier otra excepción silenciosamente
             if cur:
@@ -170,7 +171,7 @@ def run_benchmark(n_threads):
     }
 
 if __name__ == "__main__":
-    niveles = [10,20,50,100,200,500,1000,2000]
+    niveles = [10,20,50,100]
     resultados = []
     for n in niveles:
         print(f"Ejecutando {n} hilos ...")
