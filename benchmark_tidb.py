@@ -38,15 +38,16 @@ def single_transfer_with_retries(tx_id=None, max_retries=3):
         attempt += 1
         conn = None
         cur = None
+        start = time.time()  # Inicializar start antes de cualquier operación
         try:
             conn = get_connection_with_wait()
+            conn.autocommit = False  # Deshabilitar autocommit explícitamente
             cur = conn.cursor()
             # Seleccionar 2 cuentas aleatorias del total de 100
             from_id, to_id = random.sample(range(1, 101), 2)
             amount = random.randint(10,200)
-            start = time.time()
             
-            cur.execute("START TRANSACTION;")
+            # No usar START TRANSACTION explícito - la transacción inicia automáticamente
             cur.execute("UPDATE accounts SET balance = balance - %s WHERE id = %s;", (amount, from_id))
             cur.execute("UPDATE accounts SET balance = balance + %s WHERE id = %s;", (amount, to_id))
             conn.commit()
@@ -72,17 +73,18 @@ def single_transfer_with_retries(tx_id=None, max_retries=3):
             return False, None
 
         except mysql.connector.Error as e:
-            if conn:
-                try:
-                    conn.rollback()
-                except Exception:  # pylint: disable=broad-except
-                    pass
+            # Cerrar cursor ANTES de rollback para evitar estado inválido
             if cur:
                 try:
                     cur.close()
                 except Exception:  # pylint: disable=broad-except
                     pass
+            # Ahora hacer rollback con cursor ya cerrado
             if conn:
+                try:
+                    conn.rollback()
+                except Exception:  # pylint: disable=broad-except
+                    pass
                 try:
                     conn.close()
                 except Exception:  # pylint: disable=broad-except
@@ -93,16 +95,20 @@ def single_transfer_with_retries(tx_id=None, max_retries=3):
                 continue
             else:
                 # error no esperado o último intento -> fallo
-                return False, time.time() - start if 'start' in locals() else None
+                return False, time.time() - start
 
         except Exception:  # pylint: disable=broad-except
-            # Capturar cualquier otra excepción silenciosamente
+            # Capturar cualquier otra excepción - hacer rollback también
             if cur:
                 try:
                     cur.close()
                 except Exception:  # pylint: disable=broad-except
                     pass
             if conn:
+                try:
+                    conn.rollback()
+                except Exception:  # pylint: disable=broad-except
+                    pass
                 try:
                     conn.close()
                 except Exception:  # pylint: disable=broad-except
